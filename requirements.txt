@@ -1,3 +1,4 @@
+streamlit
 openai
 moviepy
 PyMuPDF
@@ -5,8 +6,6 @@ pdf2image
 faster-whisper
 pydub
 ffmpeg-python
-gTTS
-pytesseract
-opencv-python
-nest_asyncio
 edge-tts
+nest_asyncio
+pytesseract
