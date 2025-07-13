@@ -1,6 +1,8 @@
 import streamlit as st
+import streamlit.components.v1 as components
 from datetime import timedelta
 from openai import OpenAI
+import base64
 
 # === App Config ===
 st.set_page_config(page_title="🎓 AI Teacher Assistant", layout="wide")
@@ -19,54 +21,71 @@ with st.sidebar:
 if video_file and slides_file:
     st.success("✅ Files received!")
 
-    # Save video temporarily to play it
-    with open("uploaded_video.mp4", "wb") as f:
+    # Save video temporarily and encode to base64 for HTML
+    video_path = "uploaded_video.mp4"
+    with open(video_path, "wb") as f:
         f.write(video_file.read())
+    video_base64 = base64.b64encode(open(video_path, 'rb').read()).decode()
 
-    st.video("uploaded_video.mp4", start_time=0)
+    # Inject HTML video player with JS to track timestamp
+    st.markdown("### 🎥 Class Video with Smart Assistant")
+    components.html(f"""
+        <video id="classVideo" width="700" controls>
+            <source src="data:video/mp4;base64,{video_base64}" type="video/mp4">
+        </video>
+        <script>
+            const streamlitSendTime = () => {{
+                const vid = document.getElementById("classVideo");
+                setInterval(() => {{
+                    window.parent.postMessage({{ type: 'streamlit:setComponentValue', value: Math.floor(vid.currentTime) }}, '*');
+                }}, 1000);
+            }};
+            streamlitSendTime();
+        </script>
+    """, height=400)
 
-    # Simulate slide context for now
-    with st.sidebar:
-        st.subheader("⏱️ Approximate Video Time")
-        current_time = st.slider("Set current video timestamp (seconds)", 0, 2700, step=10)
-        st.caption(f"📍 Current time: {str(timedelta(seconds=current_time))}")
+    # === Read synced timestamp ===
+    current_time = st.experimental_get_query_params().get("timestamp", [0])[0]
+    current_time = int(current_time)
 
-    # Simulate slide content (replace with actual logic if you process slides)
-    slide_context = (
-        "This slide is about energy transfer and photosynthesis."
-        if current_time < 600 else
-        "This slide covers chloroplast structure and function."
-    )
+    st.caption(f"📍 Current video time: {str(timedelta(seconds=current_time))}")
 
-    # === Sidebar Chat Assistant ===
+    # Simulated context by time
+    if current_time < 600:
+        slide_context = "This slide is about energy transfer and photosynthesis."
+    elif current_time < 1200:
+        slide_context = "This slide covers chloroplast structure and function."
+    else:
+        slide_context = "This slide reviews cellular respiration and ATP production."
+
+    # === Chat Assistant ===
     with st.sidebar:
         st.header("💬 Ask the Teacher")
-        user_question = st.text_input("Ask a question based on the current slide:")
+        user_question = st.text_input("Ask a question about what you're seeing:")
 
         if user_question:
             prompt = f"""
-You're an AI teacher assistant. The viewer is watching a lesson at {current_time} seconds into the video.
+You are an AI teacher assistant. The user is watching a lesson at {current_time} seconds.
 
-They are currently viewing a slide with this content:
+They are viewing this slide:
 ---
 {slide_context}
 ---
 
-The viewer asked:
+They asked:
 "{user_question}"
 
-Respond in a clear, helpful, and friendly tone, as if you're a real teacher explaining in context.
+Give a helpful, teacher-like explanation that fits the context.
 """
             response = client.chat.completions.create(
                 model="gpt-4",
                 messages=[
-                    {"role": "system", "content": "You are an educational assistant embedded in a class video."},
+                    {"role": "system", "content": "You are a patient, insightful teacher assistant."},
                     {"role": "user", "content": prompt}
                 ]
             )
-            answer = response.choices[0].message.content.strip()
             st.markdown("#### 📘 AI Teacher’s Answer")
-            st.info(answer)
+            st.info(response.choices[0].message.content.strip())
 
 else:
     st.warning("⬅️ Please upload both a video and slide file to begin.")
