@@ -1,100 +1,65 @@
-# app.py
-
 import os
-import asyncio
-import nest_asyncio
-from moviepy.editor import *
-from pydub import AudioSegment
-from faster_whisper import WhisperModel
-from pdf2image import convert_from_path
-import pytesseract
-import edge_tts
+import streamlit as st
+from moviepy.editor import VideoFileClip
 from openai import OpenAI
+from datetime import timedelta
 
-nest_asyncio.apply()
+# === Settings ===
+st.set_page_config(page_title="AI Teacher Video Generator", layout="wide")
+client = OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
 
-# === SETTINGS ===
-OPENAI_KEY = os.getenv("OPENAI_API_KEY")
-client = OpenAI(api_key=OPENAI_KEY)
+st.title("🎓 AI Teacher Video + Interactive Assistant")
 
-# === STEP 1: Transcribe video ===
-def transcribe_video(video_path):
-    model = WhisperModel("base")
-    segments, _ = model.transcribe(video_path)
-    transcript = " ".join([seg.text for seg in segments])
-    with open("transcript.txt", "w") as f:
-        f.write(transcript)
-    return transcript
+# === Upload Files ===
+with st.sidebar:
+    st.header("📤 Upload your files")
+    video_file = st.file_uploader("Upload class video (MP4)", type=["mp4"])
+    slide_file = st.file_uploader("Upload slides (PDF)", type=["pdf"])
 
-# === STEP 2: Extract slides from PDF ===
-def extract_slides(pdf_path):
-    images = convert_from_path(pdf_path)
-    slide_texts = []
-    for i, img in enumerate(images):
-        img.save(f"slide_{i+1}.png")
-        text = pytesseract.image_to_string(img)
-        slide_texts.append(text.strip())
-    return slide_texts
+if video_file and slide_file:
+    st.success("✅ Files uploaded successfully! (processing simulated...)")
 
-# === STEP 3: Generate narration scripts ===
-def generate_scripts(slide_texts, teaching_style):
-    teacher_scripts = []
-    for i, slide_text in enumerate(slide_texts):
-        prompt = f"""
-You are a real teacher presenting a lesson. Here's the content of a slide:
+    # Simulated pre-generated output (for deployment demo)
+    video_url = "https://huggingface.co/spaces/your-repo/video-placeholder.mp4"  # Replace with your own URL
+
+    st.video(video_url, start_time=0)
+
+    # === Timestamp Slider ===
+    with st.sidebar:
+        st.subheader("⏱️ Video Time Context")
+        current_time = st.slider("Approximate video time (seconds)", 0, 2700, step=10)
+        st.caption(f"Current time: {str(timedelta(seconds=current_time))}")
+
+    # === Get current slide content (simulated logic) ===
+    # You would map this from pre-computed slide-timestamps (based on audio length per slide)
+    slide_context = "Photosynthesis and energy conversion" if current_time < 600 else "Chloroplast function and sunlight"
+
+    # === Chat Assistant ===
+    with st.sidebar:
+        st.header("💬 Ask the Teacher")
+        user_q = st.text_input("What would you like to ask?")
+        if user_q:
+            prompt = f"""
+You're an AI teaching assistant embedded in a class video. The user is currently watching a lesson at timestamp {current_time} seconds.
+They're learning about this topic:
 ---
-{slide_text}
+{slide_context}
 ---
-And here’s the teaching tone from a real classroom transcript:
----
-{teaching_style[:1500]}
----
+Here is their question:
+"{user_q}"
 
-Write a natural, spoken narration for this slide. Speak clearly, avoid fake names or students.
+Respond like a teacher giving a thoughtful, helpful explanation. Keep it accessible, clear, and connected to the topic at hand.
 """
-        response = client.chat.completions.create(
-            model="gpt-4",
-            messages=[
-                {"role": "system", "content": "You are a teacher recording a video lesson."},
-                {"role": "user", "content": prompt}
-            ]
-        )
-        narration = response.choices[0].message.content.strip()
-        teacher_scripts.append(narration)
-        print(f"✅ Slide {i+1} script done.")
-    return teacher_scripts
+            response = client.chat.completions.create(
+                model="gpt-4",
+                messages=[
+                    {"role": "system", "content": "You are an educational video assistant."},
+                    {"role": "user", "content": prompt}
+                ]
+            )
+            answer = response.choices[0].message.content.strip()
+            st.markdown("#### 📘 AI Answer")
+            st.info(answer)
 
-# === STEP 4: Generate audio with edge-tts ===
-async def generate_audio(teacher_scripts):
-    audio_paths = []
-    for i, script in enumerate(teacher_scripts):
-        filename = f"slide_audio_{i+1}.mp3"
-        try:
-            communicate = edge_tts.Communicate(script, "en-US-JennyNeural")
-            await communicate.save(filename)
-            audio_paths.append(filename)
-            print(f"✅ Slide {i+1} audio generated.")
-        except Exception as e:
-            print(f"❌ Audio error: {e}")
-    return audio_paths
-
-# === STEP 5: Calculate timestamps ===
-def get_timestamps(audio_paths):
-    timestamps = [0]
-    for audio_file in audio_paths:
-        seg = AudioSegment.from_file(audio_file)
-        duration = len(seg) / 1000
-        timestamps.append(timestamps[-1] + duration)
-    return timestamps
-
-# === STEP 6: Stitch video ===
-def build_video(audio_paths, num_slides):
-    final_clips = []
-    for i in range(num_slides):
-        img_path = f"slide_{i+1}.png"
-        audio_path = f"slide_audio_{i+1}.mp3"
-        img_clip = ImageClip(img_path).set_duration(AudioFileClip(audio_path).duration)
-        img_clip = img_clip.set_audio(AudioFileClip(audio_path))
-        final_clips.append(img_clip)
-    video = concatenate_videoclips(final_clips, method="compose")
-    video.write_videofile("final_teacher_video.mp4", fps=1)
+else:
+    st.warning("⬅️ Upload a video and PDF slide deck to begin.")
