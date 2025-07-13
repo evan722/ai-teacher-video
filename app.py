@@ -4,80 +4,88 @@ import streamlit as st
 from openai import OpenAI
 import streamlit_js_eval
 
-# === App Config ===
+# === Page Configuration ===
 st.set_page_config(page_title="🎓 AI Teacher Assistant", layout="wide")
 st.title("📚 AI Teacher Video Generator with Assistant")
 
-# === Setup OpenAI (expects key in .streamlit/secrets.toml as OPENAI_API_KEY)
-try:
-    client = OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
-except KeyError:
-    st.error("❌ Please add your OpenAI key to `.streamlit/secrets.toml` as `OPENAI_API_KEY`")
+# === Setup OpenAI Client ===
+if "OPENAI_API_KEY" not in st.secrets:
+    st.error("🚨 Please add your OpenAI API key to `.streamlit/secrets.toml` as OPENAI_API_KEY.")
     st.stop()
 
-# === Sidebar Upload ===
-with st.sidebar:
-    st.header("📤 Upload your files")
-    video_file = st.file_uploader("Upload final narrated class video (.mp4)", type=["mp4"])
-    slides_file = st.file_uploader("Upload slides (PDF or any format)", type=["pdf", "png", "jpg"])
+client = OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
 
-# === Main Area ===
+# === Sidebar File Upload ===
+with st.sidebar:
+    st.header("📤 Upload Your Files")
+    video_file = st.file_uploader("Upload narrated class video (.mp4)", type=["mp4"])
+    slides_file = st.file_uploader("Upload slides (PDF, PNG, JPG)", type=["pdf", "png", "jpg"])
+
+# === Main Interface ===
 if video_file and slides_file:
     st.success("✅ Files received!")
 
-    # Read video into memory (more compatible than writing to disk)
-    video_bytes = video_file.read()
-    st.video(video_bytes)
+    # === Save uploaded video to disk ===
+    video_path = "uploaded_video.mp4"
+    with open(video_path, "wb") as f:
+        f.write(video_file.read())
 
-    # === JS Evaluation to get current video time (auto-updating)
+    # === Embed custom video player with ID ===
+    st.markdown(f"""
+    <video id="classVideo" width="100%" controls>
+        <source src="{video_path}" type="video/mp4">
+        Your browser does not support the video tag.
+    </video>
+    """, unsafe_allow_html=True)
+
+    # === Get current timestamp using JS ===
     js_result = streamlit_js_eval.streamlit_js_eval(
-        js_expressions="document.querySelector('video')?.currentTime || 0",
-        key="video_time_sync",
-        timeout=1000,
+        js_expressions="document.getElementById('classVideo')?.currentTime || 0",
+        key="timestamp_key",
+        timeout=1000
     )
 
-    # Track current video time
     if "timestamp" not in st.session_state:
         st.session_state["timestamp"] = 0
+
     if js_result is not None:
         st.session_state["timestamp"] = int(js_result)
 
     current_time = st.session_state["timestamp"]
     st.caption(f"⏱️ Current video time: `{str(timedelta(seconds=current_time))}`")
 
-    # === Simulated slide context (you can replace with real slide mapping)
+    # === Simulated Slide Context ===
     if current_time < 600:
-        slide_context = "This slide explains the process of photosynthesis and energy flow in plants."
+        slide_context = "This slide is about energy transfer and photosynthesis."
     elif current_time < 1200:
-        slide_context = "This slide introduces the structure and function of chloroplasts."
+        slide_context = "This slide covers chloroplast structure and function."
     else:
-        slide_context = "This slide explores how mitochondria generate ATP through cellular respiration."
+        slide_context = "This slide explains ATP production in mitochondria."
 
     # === Sidebar Chat Assistant ===
     with st.sidebar:
         st.header("💬 Ask the Teacher")
-        user_question = st.text_input("Ask a question about the current lesson:")
+        user_question = st.text_input("Ask a question about the current topic:")
 
         if user_question:
             prompt = f"""
-You are an AI teacher assistant. A viewer is watching a lesson at `{current_time}` seconds into the video.
+You're an AI teacher assistant. The viewer is watching a recorded lesson at `{current_time}` seconds.
 
-They are currently viewing this content:
+They're currently seeing a slide with this content:
 ---
 {slide_context}
 ---
 
-They asked:
+The viewer asked:
 "{user_question}"
 
-Answer like a thoughtful teacher: clear, friendly, and informative. Include helpful examples if needed.
+Answer in a clear, helpful tone — like a real teacher would in a class.
 """
-
             try:
                 response = client.chat.completions.create(
                     model="gpt-4",
                     messages=[
-                        {"role": "system", "content": "You are a helpful, knowledgeable teaching assistant."},
+                        {"role": "system", "content": "You are an educational assistant embedded in a video lesson."},
                         {"role": "user", "content": prompt}
                     ]
                 )
@@ -85,6 +93,7 @@ Answer like a thoughtful teacher: clear, friendly, and informative. Include help
                 st.markdown("#### 📘 AI Teacher’s Answer")
                 st.info(answer)
             except Exception as e:
-                st.error(f"❌ OpenAI error: {e}")
+                st.error(f"❌ OpenAI API error: {e}")
+
 else:
-    st.warning("⬅️ Please upload both a video and a slide file to begin.")
+    st.warning("⬅️ Please upload both a video and slide file to begin.")
