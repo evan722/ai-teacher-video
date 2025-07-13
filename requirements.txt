@@ -1,12 +1,2 @@
 streamlit
 openai
-moviepy
-imageio-ffmpeg
-PyMuPDF
-pdf2image
-faster-whisper
-pydub
-ffmpeg-python
-edge-tts
-nest_asyncio
-pytesseract
